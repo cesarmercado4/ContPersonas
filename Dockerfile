@@ -4,7 +4,7 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DATOS_DIR=/datos \
-    YOLO_CONFIG_DIR=/tmp/ultralytics
+    YOLO_CONFIG_DIR=/tmp/ultralytics \n    TZ=America/Argentina/Buenos_Aires
 
 WORKDIR /app
 
