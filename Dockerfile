@@ -4,9 +4,13 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DATOS_DIR=/datos \
-    YOLO_CONFIG_DIR=/tmp/ultralytics \n    TZ=America/Argentina/Buenos_Aires
+    YOLO_CONFIG_DIR=/tmp/ultralytics \
+    TZ=America/Argentina/Buenos_Aires
 
 WORKDIR /app
+
+# Zona horaria: los conteos se guardan con la hora local.
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 
 # PyTorch solo CPU (mucho más liviano que la versión con CUDA) y OpenCV sin interfaz gráfica.
 RUN pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
