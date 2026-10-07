@@ -24,7 +24,7 @@ deteccion:
   modelo: yolo11n.pt
   confianza: 0.4
   tracker: bytetrack.yaml
-  max_fps: 8          # cuadros por segundo que analiza YOLO (más = más CPU)
+  max_fps: 0          # tope de cuadros/s que analiza YOLO; 0 = sin límite (más preciso)
   hilos_cpu: null     # núcleos para PyTorch; null = todos
 
 salida:

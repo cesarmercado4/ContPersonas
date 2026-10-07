@@ -135,9 +135,9 @@ def contar(cfg: dict, mostrar: bool, con_panel: bool):
     limitar_hilos(det_cfg.get("hilos_cpu"))
     base = BaseDatos(cfg["salida"].get("base_datos", "conteos.db"))
     contador = Contador(cfg["linea"], det_cfg, cfg["salida"]["csv"], base)
-    deteccion = Deteccion(contador, float(det_cfg.get("max_fps", 8)))
+    deteccion = Deteccion(contador, float(det_cfg.get("max_fps") or 0))
     deteccion.start()
-    log.info("Detección a un máximo de %s cuadros/s", det_cfg.get("max_fps", 8))
+    log.info("Detección: %s", f"máximo {det_cfg['max_fps']} cuadros/s" if det_cfg.get("max_fps") else "sin límite de cuadros/s")
 
     panel = None
     if con_panel:
