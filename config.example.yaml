@@ -24,6 +24,8 @@ deteccion:
   modelo: yolo11n.pt
   confianza: 0.4
   tracker: bytetrack.yaml
+  max_fps: 8          # cuadros por segundo que analiza YOLO (más = más CPU)
+  hilos_cpu: null     # núcleos para PyTorch; null = todos
 
 salida:
   csv: conteos.csv
@@ -36,3 +38,4 @@ panel:
   # 127.0.0.1 = solo desde esta PC. 0.0.0.0 = también desde otras PCs de la red.
   host: 0.0.0.0
   puerto: 8000
+  video_fps: 15       # cuadros por segundo del video en el panel

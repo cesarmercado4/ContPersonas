@@ -12,6 +12,8 @@ import logging
 import os
 import signal
 import sys
+import threading
+import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -44,6 +46,9 @@ VARIABLES_ENTORNO = {
     "INVERTIR_SENTIDO": ("linea", "invertir_sentido", lambda v: v.lower() in ("1", "true", "si", "sí")),
     "CONFIANZA": ("deteccion", "confianza", float),
     "PANEL_PUERTO": ("panel", "puerto", int),
+    "VIDEO_FPS": ("panel", "video_fps", float),
+    "MAX_FPS": ("deteccion", "max_fps", float),
+    "HILOS_CPU": ("deteccion", "hilos_cpu", int),
 }
 
 
@@ -83,13 +88,56 @@ def _terminar(signum, frame):
     raise KeyboardInterrupt
 
 
+class Deteccion(threading.Thread):
+    """Corre YOLO en un hilo aparte sobre el cuadro más reciente, a lo sumo `max_fps` veces por
+    segundo. Así el video del panel no queda atado a la velocidad de la detección."""
+
+    def __init__(self, contador, max_fps: float):
+        super().__init__(name="deteccion", daemon=True)
+        self.contador = contador
+        self.intervalo = 1.0 / max_fps if max_fps > 0 else 0.0
+        self._cuadro = None
+        self._lock = threading.Lock()
+        self._hay_cuadro = threading.Event()
+        self.detener = threading.Event()
+        self.procesados = 0
+
+    def entregar(self, cuadro):
+        with self._lock:
+            self._cuadro = cuadro
+        self._hay_cuadro.set()
+
+    def run(self):
+        while not self.detener.is_set():
+            if not self._hay_cuadro.wait(timeout=1.0):
+                self.contador.verificar_hora()  # cámara caída: igual se controla el cambio de hora
+                continue
+            with self._lock:
+                cuadro, self._cuadro = self._cuadro, None
+                self._hay_cuadro.clear()
+            inicio = time.monotonic()
+            try:
+                self.contador.procesar(cuadro)
+                self.procesados += 1
+            except Exception:
+                log.exception("Error al procesar un cuadro")
+            espera = self.intervalo - (time.monotonic() - inicio)
+            if espera > 0:
+                self.detener.wait(espera)
+
+
 def contar(cfg: dict, mostrar: bool, con_panel: bool):
     import cv2
-    from contador import Contador
+    from contador import Contador, limitar_hilos
     from db import BaseDatos
 
+    det_cfg = cfg["deteccion"]
+    limitar_hilos(det_cfg.get("hilos_cpu"))
     base = BaseDatos(cfg["salida"].get("base_datos", "conteos.db"))
-    contador = Contador(cfg["linea"], cfg["deteccion"], cfg["salida"]["csv"], base)
+    contador = Contador(cfg["linea"], det_cfg, cfg["salida"]["csv"], base)
+    deteccion = Deteccion(contador, float(det_cfg.get("max_fps", 8)))
+    deteccion.start()
+    log.info("Detección a un máximo de %s cuadros/s", det_cfg.get("max_fps", 8))
 
     panel = None
     if con_panel:
@@ -102,17 +150,38 @@ def contar(cfg: dict, mostrar: bool, con_panel: bool):
     camara.iniciar()
     log.info("Conteo iniciado (%s). Detener con %s", "con ventana" if mostrar else "sin ventana",
              "q o Ctrl+C" if mostrar else "Ctrl+C")
+    video_fps = float(cfg.get("panel", {}).get("video_fps", 15))
+    intervalo_video = 1.0 / video_fps if video_fps > 0 else 0.0
+    ultimo_video = 0.0
+    ultimo_reporte, cuadros_video = time.monotonic(), 0
     try:
         while True:
             cuadro = camara.leer(timeout=1.0)
             if cuadro is None:
-                # Sin imagen (cámara caída): igual se controla el cambio de hora.
-                contador.verificar_hora()
                 if mostrar and cv2.waitKey(1) & 0xFF == ord("q"):
                     break
                 continue
 
-            imagen = contador.procesar(cuadro)
+            deteccion.entregar(cuadro)
+            if panel is not None:
+                panel.latido()
+
+            ahora = time.monotonic()
+            if ahora - ultimo_reporte >= 60:
+                transcurrido = ahora - ultimo_reporte
+                log.info("Rendimiento: detección %.1f cuadros/s, video %.1f cuadros/s",
+                         deteccion.procesados / transcurrido, cuadros_video / transcurrido)
+                deteccion.procesados, cuadros_video, ultimo_reporte = 0, 0, ahora
+
+            # El video se arma con el cuadro nuevo y los últimos recuadros detectados.
+            if ahora - ultimo_video < intervalo_video:
+                continue
+            quiere_video = mostrar or (panel is not None and panel.hay_espectadores())
+            if not quiere_video:
+                continue
+            ultimo_video = ahora
+            cuadros_video += 1
+            imagen = contador.anotar(cuadro)
             if panel is not None:
                 panel.publicar(imagen)
             if mostrar:
@@ -123,6 +192,8 @@ def contar(cfg: dict, mostrar: bool, con_panel: bool):
     except KeyboardInterrupt:
         log.info("Interrupción recibida")
     finally:
+        deteccion.detener.set()
+        deteccion.join(timeout=5)
         contador.guardar_hora()
         camara.detener()
         if panel is not None:

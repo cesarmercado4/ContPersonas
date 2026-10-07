@@ -28,6 +28,7 @@ class Panel:
         self._jpeg = None
         self._version = 0
         self._ultimo_cuadro = 0.0
+        self._espectadores = 0
         self._condicion = threading.Condition()
         self._servidor = None
 
@@ -36,15 +37,22 @@ class Panel:
 
     # --- lado del conteo -------------------------------------------------------
 
+    def latido(self):
+        """Avisa que llegó un cuadro de la cámara (para el indicador de cámara en línea)."""
+        self._ultimo_cuadro = time.monotonic()
+
+    def hay_espectadores(self) -> bool:
+        """Si nadie mira el video, no vale la pena comprimir cuadros en JPEG."""
+        return self._espectadores > 0
+
     def publicar(self, imagen):
-        """Recibe la imagen anotada del último cuadro procesado."""
+        """Recibe la imagen anotada para el video en vivo."""
         ok, jpeg = cv2.imencode(".jpg", imagen, [cv2.IMWRITE_JPEG_QUALITY, CALIDAD_JPEG])
         if not ok:
             return
         with self._condicion:
             self._jpeg = jpeg.tobytes()
             self._version += 1
-            self._ultimo_cuadro = time.monotonic()
             self._condicion.notify_all()
 
     def iniciar(self):
@@ -61,17 +69,24 @@ class Panel:
     # --- lado web --------------------------------------------------------------
 
     def _camara_ok(self):
-        return self._jpeg is not None and time.monotonic() - self._ultimo_cuadro < SIN_SENAL_SEGUNDOS
+        return time.monotonic() - self._ultimo_cuadro < SIN_SENAL_SEGUNDOS
 
     def _cuadros_mjpeg(self):
         version = -1
-        while True:
+        with self._condicion:
+            self._espectadores += 1
+        try:
+            while True:
+                with self._condicion:
+                    self._condicion.wait_for(lambda: self._version != version, timeout=SIN_SENAL_SEGUNDOS)
+                    if self._version == version or self._jpeg is None:
+                        continue
+                    version, jpeg = self._version, self._jpeg
+                yield b"--cuadro\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+        finally:
+            # Se ejecuta cuando el navegador cierra la conexión.
             with self._condicion:
-                self._condicion.wait_for(lambda: self._version != version, timeout=SIN_SENAL_SEGUNDOS)
-                if self._version == version or self._jpeg is None:
-                    continue
-                version, jpeg = self._version, self._jpeg
-            yield b"--cuadro\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                self._espectadores -= 1
 
     def _rutas(self):
         app = self.app

@@ -16,9 +16,18 @@ log = logging.getLogger(__name__)
 # sin personas; solo interesan sus errores.
 logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
+
+def limitar_hilos(hilos: int | None):
+    """Limita los núcleos que usa PyTorch (por defecto toma todos los disponibles)."""
+    if hilos:
+        import torch
+        torch.set_num_threads(hilos)
+        log.info("PyTorch limitado a %d hilo(s)", hilos)
+
 CLASE_PERSONA = 0
 COLUMNAS_CSV = ["fecha", "hora", "entradas"]
 COLOR_LINEA = (238, 211, 34)  # cian (BGR), igual al del panel
+COLOR_CAJA = (200, 160, 40)   # azul (BGR) para los recuadros de personas
 
 
 def _inicio_de_hora(momento: datetime) -> datetime:
@@ -79,6 +88,7 @@ class Contador:
         # ObjectCounter devuelve totales acumulados de cada sentido; guardamos el anterior
         # para obtener solo los cruces nuevos de cada cuadro.
         self._previo = 0
+        self.cajas = []
 
         self.hora_actual = _inicio_de_hora(datetime.now())
         self.entradas_hora = 0
@@ -88,7 +98,7 @@ class Contador:
         self.entradas_hoy = self.base.entradas_dia(self.hora_actual.date())
 
     def procesar(self, cuadro):
-        """Procesa un cuadro, actualiza el conteo y devuelve la imagen anotada."""
+        """Detecta y sigue personas en un cuadro y actualiza el conteo (lo costoso)."""
         self.verificar_hora()
         resultado = self._contador(cuadro)
 
@@ -99,8 +109,17 @@ class Contador:
         if nuevas > 0:
             self._registrar(nuevas)
 
-        imagen = resultado.plot_im
-        # Ultralytics dibuja la línea en violeta fijo; se repinta en cian para el panel.
+        # Recuadros de la última detección, para dibujarlos sobre los cuadros siguientes.
+        try:
+            self.cajas = [tuple(int(v) for v in caja[:4]) for caja in self._contador.boxes]
+        except Exception:
+            self.cajas = []
+
+    def anotar(self, cuadro):
+        """Dibuja sobre un cuadro la línea, las últimas detecciones y el total del día (barato)."""
+        imagen = cuadro.copy()
+        for x1, y1, x2, y2 in self.cajas:
+            cv2.rectangle(imagen, (x1, y1), (x2, y2), COLOR_CAJA, 2, cv2.LINE_AA)
         cv2.line(imagen, self.region[0], self.region[1], COLOR_LINEA, 3, cv2.LINE_AA)
         for punto in self.region:
             cv2.circle(imagen, punto, 6, COLOR_LINEA, -1, cv2.LINE_AA)
