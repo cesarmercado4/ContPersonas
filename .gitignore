@@ -1,0 +1,17 @@
+# Credenciales de la cámara
+config.yaml
+
+# Datos y archivos generados
+conteos.csv
+conteos.db
+conteos.db-*
+*.log
+*.log.*
+calibracion.jpg
+*.pt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

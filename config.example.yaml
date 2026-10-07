@@ -1,0 +1,38 @@
+# Plantilla de configuración del contador de personas.
+# Copiar este archivo como config.yaml y completar la clave real de la cámara.
+
+camara:
+  ip: 10.10.50.16
+  puerto: 554
+  usuario: root
+  clave: "CAMBIAR"
+  # live1s1.sdp = stream principal (alta resolución), live1s2.sdp = secundario (más liviano)
+  stream: live1s2.sdp
+  reintento_segundos: 5
+
+linea:
+  # Coordenadas en píxeles del stream elegido. Obtenerlas con: python main.py --calibrar
+  punto_inicio: [450, 200]
+  punto_fin: [700, 200]
+  # Solo se cuentan las entradas. El sentido que cuenta lo decide la geometría de la línea:
+  #   línea horizontal: se cuenta a quien se mueve hacia ABAJO en la imagen
+  #   línea vertical:   se cuenta a quien se mueve hacia la DERECHA
+  # Si se cuenta a la gente que sale en lugar de la que entra, poner true.
+  invertir_sentido: false
+
+deteccion:
+  modelo: yolo11n.pt
+  confianza: 0.4
+  tracker: bytetrack.yaml
+
+salida:
+  csv: conteos.csv
+  log: contador.log
+  base_datos: conteos.db       # cada entrada con fecha y hora (SQLite)
+  mostrar_video: false        # ventana de OpenCV; el panel web la reemplaza
+
+panel:
+  habilitado: true
+  # 127.0.0.1 = solo desde esta PC. 0.0.0.0 = también desde otras PCs de la red.
+  host: 0.0.0.0
+  puerto: 8000

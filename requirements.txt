@@ -1,0 +1,4 @@
+ultralytics>=8.3.150
+opencv-python>=4.8
+pyyaml>=6.0
+flask>=3.0
